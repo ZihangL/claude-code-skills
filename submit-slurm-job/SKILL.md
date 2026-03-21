@@ -17,8 +17,10 @@ Before using this skill, set the following in your project's `CLAUDE.md` or envi
 | Variable | Example | Description |
 |----------|---------|-------------|
 | `PYTHON_PATH` | `/path/to/miniconda3/envs/myenv/bin/python3` | Full path to Python interpreter |
-| `PROJECT_DIR` | `/path/to/your/project` | Project root / default output directory |
-| `PARTITION` | `home` | Slurm partition name |
+| `PROJECT_DIR` | `/home/user_xxx/private/homefile` | **Must be under `~/private/homefile`**; Slurm submission is only allowed from this path |
+| `PARTITION` | `home` | Slurm partition name (the only compute partition) |
+
+**Cluster rule:** scripts and submissions must live under `~/private/homefile`. Data should live under `~/private/datafile`. Run `sbatch`/`srun` only after `cd ~/private/homefile/...`.
 
 ## Workflow
 
@@ -29,41 +31,31 @@ Ask the user (with `AskUserQuestion`) what they want to run. Key parameters:
 | Parameter | Default | Description |
 |-----------|---------|-------------|
 | `job_name` | (required) | Short job name for SBATCH |
-| `gpu_type` | `A800` | GPU type (see table below) |
+| `gpu_type` | (required) | GPU model, **must be explicit** (e.g., `A100_40G`, `V100`, `A800`) |
 | `n_gpu` | `1` | Number of GPUs |
 | `time` | `24:00:00` | Wall time limit |
 | `mem` | `32G` | Memory |
 | `cpus` | `4` | CPUs per task |
-| `script` | (required) | Python script path |
+| `script` | (required) | Python script path (must live under `~/private/homefile`) |
 | `args` | (required) | Script arguments |
-| `output_dir` | `{PROJECT_DIR}` | Directory for log files |
+| `output_dir` | `{PROJECT_DIR}` | Directory for log files (keep under `~/private/homefile`) |
 
 ### Step 2: Select GPU and Node
 
-Available GPU types and their nodes:
-
-| GPU Type | Node | GRES Syntax |
-|----------|------|-------------|
-| V100 | n002, n003 | `gpu:V100:1` |
-| A100_80G | n001 | `gpu:A100_80G:1` |
-| A800 | n004 | `gpu:A800:1` |
-| A100_40G | n005 | `gpu:A100_40G:1` |
-| NV5090 | n006 | `gpu:NV5090:1` |
-| H200 | n007 | `gpu:H200:1` |
-
-**CRITICAL**: GPU type MUST be explicit in `--gres` (e.g., `gpu:A800:1`, NOT `gpu:1`).
-
-If the user wants multiple GPUs on the same node, use `gpu:TYPE:N` (e.g., `gpu:A800:2`).
-
-If the user specifies a node directly (e.g., "submit on n004"), infer the GPU type from the table above.
+- **Always specify GPU model in `--gres`**: use `gpu:MODEL:N` (e.g., `gpu:A100_40G:1`, `gpu:A800:2`). `gpu:1` will be rejected.
+- Use `slurm_gpustat` (cluster-provided wheel) or `scontrol show nodes -o` to see available GPU models.
+- Fragmentation guideline: for A800, there is one 8-GPU node and another 2-GPU node. Prefer ≤2-GPU jobs on the 2-GPU node; larger jobs on the 8-GPU node.
+- If the user explicitly requests a node, add `--nodelist=node`.
 
 ### Step 3: Write and Submit sbatch Script
+
+**Important:** ensure the script is written under `~/private/homefile/...` and run `sbatch` from that directory (cluster enforcement).
 
 Generate the sbatch script following this template:
 
 ```bash
 #!/bin/bash
-#SBATCH --partition={PARTITION}
+#SBATCH --partition={PARTITION}  # home
 #SBATCH --cpus-per-task={cpus}
 #SBATCH --mem={mem}
 #SBATCH --gres=gpu:{gpu_type}:{n_gpu}
@@ -79,6 +71,8 @@ echo ==== Job started at `date` ====
 nvidia-smi
 echo
 
+cd {output_dir}
+
 {PYTHON_PATH} \
     {script} \
     {args}
@@ -88,12 +82,14 @@ echo ==== Job finished at `date` ====
 ```
 
 Key rules:
-- **Partition**: Use the configured `{PARTITION}` (check your cluster's available partitions)
-- **Python path**: Use full path `{PYTHON_PATH}` (do NOT use `conda activate`)
-- **Output**: Use `-o` for single combined stdout+stderr file
-- **No `--nodelist`** unless the user explicitly requests a specific node
+- **Partition**: use `home` (the only compute partition).
+- **Working directory**: script and submission must be under `~/private/homefile/...`.
+- **Python path**: use full path `{PYTHON_PATH}` (do NOT `conda activate`).
+- **Output**: use `-o` for combined stdout+stderr.
+- **GPU model**: must be explicit in `--gres`.
+- **No `--nodelist`** unless the user explicitly requests a specific node.
 
-Write the script to `{output_dir}/{job_name}.sh`, then submit with `sbatch`.
+Write the script to `{output_dir}/{job_name}.sh` (under `~/private/homefile`), then submit with `sbatch` from the same directory.
 
 ### Step 4: Report
 
@@ -102,6 +98,7 @@ After submission, report:
 - Log file location: `{output_dir}/{job_name}_{JOBID}.out`
 - How to monitor: `squeue -u $USER`, `tail -f {log_file}`
 - How to cancel: `scancel {JOBID}`
+- If jobs get auto-`scancel`, verify you submitted from the correct project (`~/private/homefile` matching the web UI project) and that requested resources are within quota.
 
 ## Multiple Jobs
 
