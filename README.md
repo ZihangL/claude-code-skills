@@ -18,8 +18,8 @@ Skills are reusable prompt templates that extend Claude Code's capabilities. The
    ## Slurm Configuration
 
    - PYTHON_PATH: `/path/to/miniconda3/envs/myenv/bin/python3`
-   - PROJECT_DIR: `/path/to/your/project`
-   - PARTITION: `home`
+   - PROJECT_DIR: `/home/your_user/private/homefile`   # scripts/logs must live here
+   - PARTITION: `home`                                 # compute partition
    ```
 
 3. Restart Claude Code or reload the project.
@@ -33,6 +33,7 @@ Submit GPU compute jobs to Slurm clusters. Handles:
 - GPU type selection (V100, A100, A800, H200, etc.)
 - Node scheduling
 - Log file management
+ - Cluster rules: submit from `~/private/homefile` and **always specify GPU model** in `--gres`
 
 **Usage:**
 ```
